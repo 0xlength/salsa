@@ -42,11 +42,10 @@ fn resolve_vote_account_pubkey(value: &str) -> std::result::Result<Pubkey, Strin
     if let Ok(keypair) = read_keypair_file(value) {
         return Ok(keypair.pubkey());
     }
-    if let Ok(contents) = fs::read_to_string(value) {
-        if let Ok(pubkey) = contents.trim().parse::<Pubkey>() {
+    if let Ok(contents) = fs::read_to_string(value)
+        && let Ok(pubkey) = contents.trim().parse::<Pubkey>() {
             return Ok(pubkey);
         }
-    }
     Err(format!(
         "Could not parse '{value}' as a pubkey, keypair file, or pubkey file"
     ))
