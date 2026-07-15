@@ -1659,7 +1659,6 @@ impl Validator {
             receiver_address: multicast_root_receiver_address.clone(),
         });
 
-
         let tvu = Tvu::new(
             vote_account.clone(),
             authorized_voter_keypairs,
