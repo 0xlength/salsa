@@ -12,6 +12,7 @@ use {
     },
     solana_runtime::bank::Bank,
     solana_runtime_transaction::transaction_with_meta::TransactionWithMeta,
+    solana_svm::transaction_processing_result::TransactionProcessingResult,
     solana_transaction_error::TransactionError,
 };
 
@@ -19,7 +20,7 @@ mod transaction {
     pub use solana_transaction_error::TransactionResult as Result;
 }
 
-type TransactionCostResults<'a, Tx> = SmallVec<
+pub(crate) type TransactionCostResults<'a, Tx> = SmallVec<
     [transaction::Result<TransactionCost<'a, Tx>>;
         super::consumer::TARGET_NUM_TRANSACTIONS_PER_BATCH],
 >;
@@ -40,11 +41,18 @@ impl QosService {
         bank: &Bank,
         transactions: &'a [Tx],
         pre_results: impl Iterator<Item = transaction::Result<()>>,
+        defer_cost_admission: bool,
     ) -> (TransactionCostResults<'a, Tx>, u64) {
         let transaction_costs =
             Self::compute_transaction_costs(&bank.feature_set, transactions.iter(), pre_results);
-        let (transactions_qos_cost_results, num_included) =
-            Self::select_transactions_per_cost(transactions.iter(), transaction_costs, bank);
+
+        // Admission is gated later, on actual usage (`try_reserve_actual_costs`).
+        let (transactions_qos_cost_results, num_included) = if defer_cost_admission {
+            let num_included = transaction_costs.iter().filter(|c| c.is_ok()).count();
+            (transaction_costs, num_included)
+        } else {
+            Self::select_transactions_per_cost(transactions.iter(), transaction_costs, bank)
+        };
         let cost_model_throttled_transactions_count =
             transactions.len().saturating_sub(num_included) as u64;
 
@@ -207,6 +215,65 @@ impl QosService {
             }
         });
         cost_tracker.sub_transactions_in_flight(num_included);
+    }
+
+    /// Reserves each processed transaction's actual, post-execution cost.
+    /// Transactions are reserved independently unless `all_or_nothing`, in
+    /// which case one rejection rolls back the whole group and its siblings
+    /// come back as `CommitCancelled`.
+    ///
+    /// The returned vector mirrors the inputs 1:1 and is finalized the same
+    /// way as declared-cost reservations, via `remove_or_update_costs`.
+    pub fn try_reserve_actual_costs<'a, Tx: TransactionWithMeta>(
+        bank: &Bank,
+        transactions: &'a [Tx],
+        processing_results: &[TransactionProcessingResult],
+        all_or_nothing: bool,
+    ) -> TransactionCostResults<'a, Tx> {
+        // Compute actual costs before taking the cost tracker lock, as
+        // `compute_transaction_costs` does for declared costs.
+        let mut results: TransactionCostResults<'a, Tx> = transactions
+            .iter()
+            .zip(processing_results)
+            .map(|(tx, processing_result)| match processing_result {
+                Err(err) => Err(err.clone()),
+                Ok(processed_tx) => Ok(CostModel::calculate_cost_for_executed_transaction(
+                    tx,
+                    processed_tx.executed_units(),
+                    processed_tx.loaded_accounts_data_size(),
+                    &bank.feature_set,
+                )),
+            })
+            .collect();
+
+        let mut cost_tracker = bank.write_cost_tracker().unwrap();
+        let mut num_reserved = 0;
+        let mut rejected = false;
+        for result in &mut results {
+            if let Ok(cost) = result {
+                match cost_tracker.try_add(cost) {
+                    Ok(_) => num_reserved += 1,
+                    Err(e) => {
+                        rejected = true;
+                        *result = Err(TransactionError::from(e));
+                    }
+                }
+            }
+        }
+
+        if all_or_nothing && rejected {
+            for result in &mut results {
+                if let Ok(cost) = result {
+                    cost_tracker.remove(cost);
+                    *result = Err(TransactionError::CommitCancelled);
+                }
+            }
+            num_reserved = 0;
+        }
+
+        cost_tracker.add_transactions_in_flight(num_reserved);
+
+        results
     }
 }
 
