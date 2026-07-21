@@ -3416,7 +3416,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "harmonic-scheduler"
-version = "4.2.0-beta.1"
+version = "4.3.0-alpha.1"
 dependencies = [
  "agave-logger",
  "agave-scheduler-bindings",
@@ -3444,11 +3444,11 @@ dependencies = [
  "shaq",
  "smallvec",
  "solana-clock",
- "solana-hash 4.4.0",
+ "solana-hash 4.5.0",
  "solana-instruction",
  "solana-keypair",
  "solana-message",
- "solana-packet 4.1.0",
+ "solana-packet 4.2.0",
  "solana-pubkey 4.2.0",
  "solana-sdk-ids",
  "solana-signature",
@@ -6163,7 +6163,7 @@ version = "4.3.0-alpha.1"
 
 [[package]]
 name = "rdtsc"
-version = "4.2.0-beta.1"
+version = "4.3.0-alpha.1"
 dependencies = [
  "criterion",
 ]
@@ -12705,14 +12705,14 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tip-manager"
-version = "4.2.0-beta.1"
+version = "4.3.0-alpha.1"
 dependencies = [
  "bincode",
  "borsh",
  "log",
  "smallvec",
  "solana-clock",
- "solana-hash 4.4.0",
+ "solana-hash 4.5.0",
  "solana-instruction",
  "solana-keypair",
  "solana-pubkey 4.2.0",
